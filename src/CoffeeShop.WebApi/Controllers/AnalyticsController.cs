@@ -8,20 +8,20 @@ namespace CoffeeShop.WebApi.Controllers;
 [Route("api/[controller]")]
 public class AnalyticsController : ControllerBase
 {
-    private readonly IOrderAnalyticsService _analyticsService;
+    private readonly IOrderAnalyticsReader _analyticsReader;
 
-    public AnalyticsController(IOrderAnalyticsService analyticsService)
+    public AnalyticsController(IOrderAnalyticsReader analyticsReader)
     {
-        _analyticsService = analyticsService;
+        _analyticsReader = analyticsReader;
     }
 
     /// <summary>
-    /// Отримати зведену бізнес-статистику замовлень, накопичену обробниками подій (Event-Driven).
+    /// Отримати зведену бізнес-статистику (через вузький інтерфейс IOrderAnalyticsReader - ISP/DIP).
     /// </summary>
     [HttpGet]
     public ActionResult<OrderAnalyticsDto> GetStatistics()
     {
-        var statistics = _analyticsService.GetStatistics();
+        var statistics = _analyticsReader.GetStatistics();
         return Ok(statistics);
     }
 }

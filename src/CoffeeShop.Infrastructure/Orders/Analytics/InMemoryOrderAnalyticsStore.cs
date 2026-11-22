@@ -4,8 +4,9 @@ using CoffeeShop.Application.Orders.Services;
 namespace CoffeeShop.Infrastructure.Orders.Analytics;
 
 /// <summary>
-/// Потокобезпечне In-Memory сховище для накопичення статистики,
-/// яку збирають Event-Driven обробники.
+/// Потокобезпечне In-Memory сховище статистики.
+/// Реалізує IOrderAnalyticsReader (для UI / контролерів) та IOrderAnalyticsWriter (для обробників подій)
+/// згідно з принципом Interface Segregation Principle (ISP).
 /// </summary>
 public class InMemoryOrderAnalyticsStore : IOrderAnalyticsService
 {

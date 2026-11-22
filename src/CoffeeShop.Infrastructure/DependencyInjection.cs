@@ -4,6 +4,7 @@ using CoffeeShop.Application.Orders.Services;
 using CoffeeShop.Domain.Menu.Repositories;
 using CoffeeShop.Domain.Orders.Contracts;
 using CoffeeShop.Domain.Orders.Events;
+using CoffeeShop.Domain.Orders.Pricing;
 using CoffeeShop.Domain.Orders.Repositories;
 using CoffeeShop.Infrastructure.Events;
 using CoffeeShop.Infrastructure.Gateways;
@@ -16,7 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace CoffeeShop.Infrastructure;
 
 /// <summary>
-/// Метод розширення для реєстрації залежностей інфраструктурного шару.
+/// Метод розширення для реєстрації залежностей інфраструктурного шару (DIP, ISP, OCP).
 /// </summary>
 public static class DependencyInjection
 {
@@ -29,9 +30,16 @@ public static class DependencyInjection
         // ── Контракт взаємодії між контекстами ──
         services.AddScoped<IMenuCatalogGateway, MenuCatalogGateway>();
 
-        // ── Сховище аналітики подій (Singleton) ──
+        // ── Сховище аналітики подій (ISP: розділені Reader і Writer) ──
         services.AddSingleton<InMemoryOrderAnalyticsStore>();
+        services.AddSingleton<IOrderAnalyticsReader>(sp => sp.GetRequiredService<InMemoryOrderAnalyticsStore>());
+        services.AddSingleton<IOrderAnalyticsWriter>(sp => sp.GetRequiredService<InMemoryOrderAnalyticsStore>());
         services.AddSingleton<IOrderAnalyticsService>(sp => sp.GetRequiredService<InMemoryOrderAnalyticsStore>());
+
+        // ── Політики знижок та ціноутворення (OCP) ──
+        services.AddSingleton<IDiscountPolicy, BulkOrderDiscountPolicy>();
+        services.AddSingleton<IDiscountPolicy, LargeOrderDiscountPolicy>();
+        services.AddScoped<IOrderPricingService, OrderPricingService>();
 
         // ── Event-Driven інфраструктура (Event Bus) ──
         services.AddScoped<IEventBus, InProcessEventBus>();
@@ -41,9 +49,10 @@ public static class DependencyInjection
         services.AddScoped<IEventHandler<OrderCreatedEvent>, OrderCreatedAnalyticsHandler>();
         services.AddScoped<IEventHandler<OrderStatusChangedEvent>, OrderStatusChangedNotificationHandler>();
 
-        // ── Прикладні сервіси (Use Cases) ──
-        services.AddScoped<MenuService>();
-        services.AddScoped<OrderService>();
+        // ── Прикладні сервіси (DIP / SRP / ISP: інтерфейси замість конкретних класів) ──
+        services.AddScoped<IMenuService, MenuService>();
+        services.AddScoped<IOrderQueryService, OrderQueryService>();
+        services.AddScoped<IOrderCommandService, OrderCommandService>();
 
         return services;
     }

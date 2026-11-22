@@ -1,29 +1,29 @@
 using CoffeeShop.Application.Events;
+using CoffeeShop.Application.Orders.Services;
 using CoffeeShop.Domain.Orders.Events;
-using CoffeeShop.Infrastructure.Orders.Analytics;
 using Microsoft.Extensions.Logging;
 
 namespace CoffeeShop.Infrastructure.Orders.Handlers;
 
 /// <summary>
-/// Обробник події OrderStatusChangedEvent: імітує сповіщення гостя про зміну статусу його замовлення.
+/// Обробник події OrderStatusChangedEvent (ISP): залежить виключно від IOrderAnalyticsWriter.
 /// </summary>
 public class OrderStatusChangedNotificationHandler : IEventHandler<OrderStatusChangedEvent>
 {
-    private readonly InMemoryOrderAnalyticsStore _analyticsStore;
+    private readonly IOrderAnalyticsWriter _analyticsWriter;
     private readonly ILogger<OrderStatusChangedNotificationHandler> _logger;
 
     public OrderStatusChangedNotificationHandler(
-        InMemoryOrderAnalyticsStore analyticsStore,
+        IOrderAnalyticsWriter analyticsWriter,
         ILogger<OrderStatusChangedNotificationHandler> logger)
     {
-        _analyticsStore = analyticsStore;
+        _analyticsWriter = analyticsWriter;
         _logger = logger;
     }
 
     public Task HandleAsync(OrderStatusChangedEvent evt, CancellationToken ct = default)
     {
-        _analyticsStore.RecordStatusChange();
+        _analyticsWriter.RecordStatusChange();
 
         var message = evt.NewStatus switch
         {

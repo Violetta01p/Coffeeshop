@@ -8,7 +8,7 @@ namespace CoffeeShop.Application.Menu.Services;
 /// <summary>
 /// Прикладний сервіс (Use Cases) для контексту Menu.
 /// </summary>
-public class MenuService
+public class MenuService : IMenuService
 {
     private readonly IMenuItemRepository _repository;
 

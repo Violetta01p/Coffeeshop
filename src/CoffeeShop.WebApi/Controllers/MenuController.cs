@@ -8,9 +8,9 @@ namespace CoffeeShop.WebApi.Controllers;
 [Route("api/[controller]")]
 public class MenuController : ControllerBase
 {
-    private readonly MenuService _menuService;
+    private readonly IMenuService _menuService;
 
-    public MenuController(MenuService menuService)
+    public MenuController(IMenuService menuService)
     {
         _menuService = menuService;
     }

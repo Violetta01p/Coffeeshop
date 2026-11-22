@@ -1,11 +1,8 @@
-using CoffeeShop.Application.Orders.Dtos;
-
 namespace CoffeeShop.Application.Orders.Services;
 
 /// <summary>
-/// Інтерфейс сервісу аналітики замовлень.
+/// Композитний інтерфейс аналітики замовлень, що об'єднує Reader та Writer.
 /// </summary>
-public interface IOrderAnalyticsService
+public interface IOrderAnalyticsService : IOrderAnalyticsReader, IOrderAnalyticsWriter
 {
-    OrderAnalyticsDto GetStatistics();
 }

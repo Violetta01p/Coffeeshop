@@ -1,37 +1,34 @@
 using CoffeeShop.Application.Events;
+using CoffeeShop.Application.Orders.Services;
 using CoffeeShop.Domain.Orders.Events;
-using CoffeeShop.Infrastructure.Orders.Analytics;
 using Microsoft.Extensions.Logging;
 
 namespace CoffeeShop.Infrastructure.Orders.Handlers;
 
 /// <summary>
-/// Обробник події OrderCreatedEvent: накопичує бізнес-аналітику та виручку в пам'яті.
+/// Обробник події OrderCreatedEvent (ISP): залежить виключно від IOrderAnalyticsWriter.
 /// </summary>
 public class OrderCreatedAnalyticsHandler : IEventHandler<OrderCreatedEvent>
 {
-    private readonly InMemoryOrderAnalyticsStore _analyticsStore;
+    private readonly IOrderAnalyticsWriter _analyticsWriter;
     private readonly ILogger<OrderCreatedAnalyticsHandler> _logger;
 
     public OrderCreatedAnalyticsHandler(
-        InMemoryOrderAnalyticsStore analyticsStore,
+        IOrderAnalyticsWriter analyticsWriter,
         ILogger<OrderCreatedAnalyticsHandler> logger)
     {
-        _analyticsStore = analyticsStore;
+        _analyticsWriter = analyticsWriter;
         _logger = logger;
     }
 
     public Task HandleAsync(OrderCreatedEvent evt, CancellationToken ct = default)
     {
-        _analyticsStore.RecordOrder(evt.TotalAmount, evt.CreatedAtUtc);
-
-        var stats = _analyticsStore.GetStatistics();
+        _analyticsWriter.RecordOrder(evt.TotalAmount, evt.CreatedAtUtc);
 
         _logger.LogInformation(
-            "📊 [Аналітика] Замовлення #{OrderId} враховано в аналітиці. Всього замовлень: {TotalCount}, загальний виторг: {TotalRevenue:N2} грн.",
+            "📊 [Аналітика] Замовлення #{OrderId} враховано в аналітиці (сума: {TotalAmount:N2} грн).",
             evt.OrderId,
-            stats.TotalOrdersCount,
-            stats.TotalRevenue);
+            evt.TotalAmount);
 
         return Task.CompletedTask;
     }

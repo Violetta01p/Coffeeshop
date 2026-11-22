@@ -5,27 +5,32 @@ using CoffeeShop.Domain.Common.ValueObjects;
 using CoffeeShop.Domain.Orders.Contracts;
 using CoffeeShop.Domain.Orders.Entities;
 using CoffeeShop.Domain.Orders.Events;
+using CoffeeShop.Domain.Orders.Pricing;
 using CoffeeShop.Domain.Orders.Repositories;
 
 namespace CoffeeShop.Application.Orders.Services;
 
 /// <summary>
-/// Прикладний сервіс (Use Cases) для контексту Orders.
+/// Прикладний сервіс команд (Commands) — відповідає за зміну стану замовлень,
+/// розрахунок ціни через IOrderPricingService (OCP) та публікацію подій (SRP / ISP).
 /// </summary>
-public class OrderService
+public class OrderCommandService : IOrderCommandService
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IMenuCatalogGateway _menuCatalog;
     private readonly IEventBus _eventBus;
+    private readonly IOrderPricingService _pricingService;
 
-    public OrderService(
+    public OrderCommandService(
         IOrderRepository orderRepository,
         IMenuCatalogGateway menuCatalog,
-        IEventBus eventBus)
+        IEventBus eventBus,
+        IOrderPricingService pricingService)
     {
         _orderRepository = orderRepository;
         _menuCatalog = menuCatalog;
         _eventBus = eventBus;
+        _pricingService = pricingService;
     }
 
     public async Task<OrderResponse> CreateAsync(CreateOrderRequest request, CancellationToken ct = default)
@@ -55,6 +60,13 @@ public class OrderService
             new CustomerName(request.CustomerName),
             orderItems);
 
+        // Розрахунок та застосування найкращої знижки (OCP через IOrderPricingService)
+        var discountResult = _pricingService.CalculateBestDiscount(order);
+        if (discountResult.DiscountAmount.Amount > 0)
+        {
+            order.ApplyDiscount(discountResult.DiscountAmount, discountResult.PolicyName);
+        }
+
         await _orderRepository.AddAsync(order, ct);
 
         // Публікація доменної події про створення замовлення
@@ -65,19 +77,7 @@ public class OrderService
             order.Items.Count,
             order.CreatedAt), ct);
 
-        return MapToResponse(order);
-    }
-
-    public async Task<IReadOnlyList<OrderResponse>> GetAllAsync(CancellationToken ct = default)
-    {
-        var orders = await _orderRepository.GetAllAsync(ct);
-        return orders.Select(MapToResponse).ToList();
-    }
-
-    public async Task<OrderResponse?> GetByIdAsync(Guid id, CancellationToken ct = default)
-    {
-        var order = await _orderRepository.GetByIdAsync(id, ct);
-        return order is null ? null : MapToResponse(order);
+        return OrderQueryService.MapToResponse(order);
     }
 
     public async Task<OrderResponse> ChangeStatusAsync(
@@ -117,22 +117,6 @@ public class OrderService
             order.Status.ToString(),
             DateTime.UtcNow), ct);
 
-        return MapToResponse(order);
+        return OrderQueryService.MapToResponse(order);
     }
-
-    // ── Mapping ──
-
-    private static OrderResponse MapToResponse(Order order) =>
-        new(order.Id,
-            order.CustomerName.Value,
-            order.Status.ToString(),
-            order.CreatedAt,
-            order.TotalAmount.Amount,
-            order.Items.Select(i => new OrderItemResponse(
-                i.Id,
-                i.MenuItemId,
-                i.ProductName,
-                i.UnitPrice.Amount,
-                i.Quantity,
-                i.Subtotal.Amount)).ToList());
 }

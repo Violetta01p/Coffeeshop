@@ -16,6 +16,8 @@ public class Order
     public OrderStatus Status { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public IReadOnlyList<OrderItem> Items => _items.AsReadOnly();
+    public Money Discount { get; private set; } = Money.Zero;
+    public string? AppliedDiscountName { get; private set; }
 
     // Для ORM
     private Order() { }
@@ -35,10 +37,31 @@ public class Order
     }
 
     /// <summary>
-    /// Загальна сума замовлення.
+    /// Вартість замовлення без урахування знижок.
+    /// </summary>
+    public Money Subtotal =>
+        _items.Aggregate(Money.Zero, (sum, item) => sum.Add(item.Subtotal));
+
+    /// <summary>
+    /// Підсумкова сума замовлення до сплати (з урахуванням можливої знижки).
     /// </summary>
     public Money TotalAmount =>
-        _items.Aggregate(Money.Zero, (sum, item) => sum.Add(item.Subtotal));
+        new(Math.Max(0m, Subtotal.Amount - Discount.Amount));
+
+    /// <summary>
+    /// Застосувати знижку до замовлення (відповідно до обраної IDiscountPolicy).
+    /// </summary>
+    public void ApplyDiscount(Money discount, string? discountName)
+    {
+        if (discount.Amount < 0)
+            throw new DomainException("Знижка не може бути від'ємною.");
+
+        if (discount.Amount > Subtotal.Amount)
+            throw new DomainException("Знижка не може перевищувати загальну вартість замовлення.");
+
+        Discount = discount;
+        AppliedDiscountName = string.IsNullOrWhiteSpace(discountName) ? null : discountName.Trim();
+    }
 
     /// <summary>
     /// Перевести замовлення у статус «Готується».
