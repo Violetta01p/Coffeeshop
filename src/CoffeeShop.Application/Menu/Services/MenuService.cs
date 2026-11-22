@@ -1,3 +1,4 @@
+using CoffeeShop.Application.Common;
 using CoffeeShop.Application.Menu.Dtos;
 using CoffeeShop.Application.Menu.Mappers;
 using CoffeeShop.Domain.Common.ValueObjects;
@@ -8,17 +9,22 @@ namespace CoffeeShop.Application.Menu.Services;
 
 /// <summary>
 /// Прикладний сервіс (Use Cases) для контексту Menu.
-/// Використовує IMenuMapper для мапінгу у DTO (IoC / DIP).
+/// Всі операції запису фіксуються атомарно через IUnitOfWork.
 /// </summary>
 public class MenuService : IMenuService
 {
     private readonly IMenuItemRepository _repository;
     private readonly IMenuMapper _mapper;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public MenuService(IMenuItemRepository repository, IMenuMapper mapper)
+    public MenuService(
+        IMenuItemRepository repository,
+        IMenuMapper mapper,
+        IUnitOfWork unitOfWork)
     {
         _repository = repository;
         _mapper = mapper;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<IReadOnlyList<MenuItemResponse>> GetAllAsync(CancellationToken ct = default)
@@ -42,6 +48,8 @@ public class MenuService : IMenuService
             new Money(request.Price));
 
         await _repository.AddAsync(item, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
         return _mapper.ToResponse(item);
     }
 
@@ -57,6 +65,8 @@ public class MenuService : IMenuService
             item.MarkAsUnavailable();
 
         await _repository.UpdateAsync(item, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
         return _mapper.ToResponse(item);
     }
 
@@ -68,6 +78,8 @@ public class MenuService : IMenuService
 
         item.UpdatePrice(new Money(request.Price));
         await _repository.UpdateAsync(item, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+
         return _mapper.ToResponse(item);
     }
 }
