@@ -23,7 +23,9 @@ public sealed record OrderResponse(
     string Status,
     DateTime CreatedAt,
     decimal TotalAmount,
-    List<OrderItemResponse> Items);
+    List<OrderItemResponse> Items,
+    decimal Discount = 0,
+    string? AppliedDiscount = null);
 
 public sealed record OrderItemResponse(
     Guid Id,

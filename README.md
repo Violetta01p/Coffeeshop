@@ -209,29 +209,120 @@ src/
 │       │   ├── Order.cs
 │       │   └── OrderItem.cs
 │       ├── Enums/OrderStatus.cs
+│       ├── Events/
+│       │   └── OrderEvents.cs      ⚡ Доменні події (OrderCreated, OrderStatusChanged)
+│       ├── Pricing/                💎 OCP: Політики знижок та ціноутворення
+│       │   ├── IDiscountPolicy.cs
+│       │   ├── BulkOrderDiscountPolicy.cs
+│       │   ├── LargeOrderDiscountPolicy.cs
+│       │   ├── IOrderPricingService.cs
+│       │   └── OrderPricingService.cs
 │       └── Repositories/IOrderRepository.cs
 │
 ├── CoffeeShop.Application/         ➡️ залежить від Domain
+│   ├── Events/
+│   │   ├── IEventBus.cs            ⚡ Контракт шини подій
+│   │   └── IEventHandler.cs        ⚡ Контракт підписника/обробника
 │   ├── Menu/
 │   │   ├── Dtos/MenuDtos.cs
-│   │   └── Services/MenuService.cs
+│   │   └── Services/
+│   │       ├── IMenuService.cs     💎 DIP: Інтерфейс для MenuController
+│   │       └── MenuService.cs
 │   └── Orders/
 │       ├── Dtos/OrderDtos.cs
-│       └── Services/OrderService.cs
+│       ├── Dtos/OrderAnalyticsDto.cs
+│       └── Services/
+│           ├── IOrderQueryService.cs       💎 SRP / ISP: Інтерфейс читання замовлень
+│           ├── IOrderCommandService.cs     💎 SRP / ISP: Інтерфейс команд замовлень
+│           ├── OrderQueryService.cs        💎 SRP: Читання замовлень
+│           ├── OrderCommandService.cs      💎 SRP: Команди та публікація подій
+│           ├── IOrderAnalyticsReader.cs    💎 ISP: Тільки читання аналітики
+│           ├── IOrderAnalyticsWriter.cs    💎 ISP: Тільки запис аналітики
+│           └── IOrderAnalyticsService.cs
 │
 ├── CoffeeShop.Infrastructure/      ➡️ залежить від Application
+│   ├── Events/
+│   │   └── InProcessEventBus.cs    ⚡ In-Process шина на базі IServiceProvider
 │   ├── Menu/InMemoryMenuItemRepository.cs
-│   ├── Orders/InMemoryOrderRepository.cs
+│   ├── Orders/
+│   │   ├── InMemoryOrderRepository.cs
+│   │   ├── Analytics/InMemoryOrderAnalyticsStore.cs   💎 Реалізує IOrderAnalyticsReader та Writer
+│   │   └── Handlers/
+│   │       ├── OrderCreatedNotificationHandler.cs
+│   │       ├── OrderCreatedAnalyticsHandler.cs        💎 Залежить суто від IOrderAnalyticsWriter
+│   │       └── OrderStatusChangedNotificationHandler.cs 💎 Залежить суто від IOrderAnalyticsWriter
 │   ├── Gateways/MenuCatalogGateway.cs
-│   └── DependencyInjection.cs
+│   └── DependencyInjection.cs      💎 Реєстрація всіх абстракцій та політик
 │
 └── CoffeeShop.WebApi/              ➡️ залежить від Application + Infrastructure
     ├── Controllers/
-    │   ├── MenuController.cs
-    │   └── OrdersController.cs
+    │   ├── MenuController.cs       💎 Залежить від IMenuService (DIP)
+    │   ├── OrdersController.cs     💎 Залежить від IOrderCommandService, IOrderQueryService (DIP / ISP)
+    │   └── AnalyticsController.cs  💎 Залежить від IOrderAnalyticsReader (DIP / ISP)
     ├── Middleware/ExceptionHandlingMiddleware.cs
     └── Program.cs
 ```
+
+---
+
+## ⚡ Практична робота №2: Подієво-орієнтований підхід (Event-Driven Design)
+
+У межах ПЗ №2 реалізовано внутрішньопроцесну подієво-орієнтовану модель (In-Process Event-Driven Architecture), яка забезпечує **слабку зв'язаність (Loose Coupling)** та дотримання принципів Clean Architecture.
+
+### 1. Архітектурні компоненти
+- **Контракти подій (Domain):**
+  - `OrderCreatedEvent` — публікується при створенні нового замовлення (містить `OrderId`, `CustomerName`, `TotalAmount`, `ItemsCount`, `CreatedAtUtc`).
+  - `OrderStatusChangedEvent` — публікується при зміні статусу замовлення (`OrderId`, `CustomerName`, `PreviousStatus`, `NewStatus`, `ChangedAtUtc`).
+- **Шина подій (Application / Infrastructure):**
+  - `IEventBus` (Application) — інтерфейс шини для відправки подій `PublishAsync<TEvent>(evt, ct)`.
+  - `IEventHandler<in TEvent>` (Application) — контракт обробників.
+  - `InProcessEventBus` (Infrastructure) — резолвить усіх зареєстрованих підписників через `IServiceProvider.GetServices<IEventHandler<TEvent>>()` та асинхронно викликає їх.
+- **Продюсер:**
+  - `OrderCommandService` знає **лише** про `IEventBus`. Жодної прямої залежності від сервісів сповіщень чи аналітики.
+- **Споживачі (Consumers / Handlers):**
+  1. `OrderCreatedNotificationHandler` — імітує сповіщення баристи / кухні про надходження замовлення.
+  2. `OrderCreatedAnalyticsHandler` — автоматично агрегує виручку та кількість замовлень у `InMemoryOrderAnalyticsStore`.
+  3. `OrderStatusChangedNotificationHandler` — надсилає гостю контекстне сповіщення при переходах статусів (`Preparing`, `Ready`, `Completed`, `Cancelled`).
+
+### 2. Ендпоінт демонстрації роботи обробників
+- `GET /api/analytics` — повертає зведену статистику, накопичену аналітичним обробником подій у реальному часі.
+
+---
+
+## 💎 Практична робота №3: Принципи SOLID у проєктуванні компонентів ПЗ
+
+У межах ПЗ №3 проведено глибокий рефакторинг кодової бази із дотриманням 4 ключових принципів SOLID:
+
+### 1. DIP (Dependency Inversion Principle — Принцип інверсії залежностей)
+* **До:** Контролери `MenuController` та `OrdersController` напряму залежали від конкретних реалізацій сервісів `MenuService` та `OrderService`. Модулі високого рівня були жорстко прив'язані до конкретних класів.
+* **Після:**
+  - Створено інтерфейси `IMenuService`, `IOrderCommandService` та `IOrderQueryService` у шарі `Application`.
+  - Контролери залежать **виключно від інтерфейсів-абстракцій**.
+  - Конкретні реалізації реєструються у DI-контейнері (`AddInfrastructure()`).
+
+### 2. SRP (Single Responsibility Principle — Принцип єдиної відповідальності)
+* **До:** Клас `OrderService` поєднував у собі запити на читання (`GetAll`, `GetById`), валідацію і створення замовлень, застосування знижок, зміну статусів та публікацію подій. Він мав забагато причин для змін.
+* **Після:**
+  - `OrderQueryService` — має одну зону відповідальності: читання та мапінг замовлень у DTO.
+  - `OrderCommandService` — відповідає виключно за виконання бізнес-команд зі зміни стану, виклик розрахунку знижок та відправку подій у шину `IEventBus`.
+
+### 3. ISP (Interface Segregation Principle — Принцип розділення інтерфейсу)
+* **До:** Сервіс аналітики мав універсальний інтерфейс `IOrderAnalyticsService`, що поєднував методи читання (`GetStatistics`) та запису (`RecordOrder`, `RecordStatusChange`). В результаті клієнти залежали від непотрібних їм методів.
+* **Після:**
+  - Створено два вузьких інтерфейси:
+    - `IOrderAnalyticsReader` — містить лише `GetStatistics()`, впроваджується **тільки** в `AnalyticsController`.
+    - `IOrderAnalyticsWriter` — містить методи мутації, впроваджується **тільки** в обробники подій `OrderCreatedAnalyticsHandler` та `OrderStatusChangedNotificationHandler`.
+  - Сховище `InMemoryOrderAnalyticsStore` реалізує обидва інтерфейси, але кожен клієнт бачить лише свій контракт.
+
+### 4. OCP (Open/Closed Principle — Принцип відкритості / закритості)
+* **До:** Будь-яка нова знижка або акційне правило вимагала б дописування розгалужених ланцюжків `if/else` всередині сутності чи прикладного сервісу.
+* **Після:**
+  - У шарі `Domain` створено абстракцію політики знижок `IDiscountPolicy` з методом `Money CalculateDiscount(Order order)`.
+  - Реалізовано конкретні стратегії:
+    - `BulkOrderDiscountPolicy` — 10% знижки при замовленні від 3 товарів;
+    - `LargeOrderDiscountPolicy` — 5% знижки на чеки від 300 грн.
+  - Доменний сервіс `OrderPricingService : IOrderPricingService` приймає `IEnumerable<IDiscountPolicy>` через DI та обирає найбільш вигідну для клієнта знижку.
+  - **Нові знижки додаються створенням нового класу-політики** без редагування існуючих класів. Якщо знижки немає, сума замовлення залишається без змін (зворотна сумісність).
 
 ---
 
@@ -240,3 +331,4 @@ src/
 - .NET 8 / ASP.NET Core Web API
 - Swagger / OpenAPI (Swashbuckle)
 - InMemory-сховище (ConcurrentDictionary) — проєкт запускається без налаштування БД
+- In-Process Event Bus (Event-Driven Architecture)
