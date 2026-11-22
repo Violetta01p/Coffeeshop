@@ -22,7 +22,7 @@ public class Order
     // Для ORM
     private Order() { }
 
-    public Order(Guid id, CustomerName customerName, IEnumerable<OrderItem> items)
+    public Order(Guid id, CustomerName customerName, IEnumerable<OrderItem> items, DateTime? createdAt = null)
     {
         var itemList = items.ToList();
 
@@ -32,7 +32,7 @@ public class Order
         Id = id;
         CustomerName = customerName;
         Status = OrderStatus.Pending;
-        CreatedAt = DateTime.UtcNow;
+        CreatedAt = createdAt ?? DateTime.UtcNow;
         _items.AddRange(itemList);
     }
 

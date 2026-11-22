@@ -1,4 +1,5 @@
 using CoffeeShop.Application.Menu.Dtos;
+using CoffeeShop.Application.Menu.Mappers;
 using CoffeeShop.Domain.Common.ValueObjects;
 using CoffeeShop.Domain.Menu.Entities;
 using CoffeeShop.Domain.Menu.Repositories;
@@ -7,26 +8,29 @@ namespace CoffeeShop.Application.Menu.Services;
 
 /// <summary>
 /// Прикладний сервіс (Use Cases) для контексту Menu.
+/// Використовує IMenuMapper для мапінгу у DTO (IoC / DIP).
 /// </summary>
 public class MenuService : IMenuService
 {
     private readonly IMenuItemRepository _repository;
+    private readonly IMenuMapper _mapper;
 
-    public MenuService(IMenuItemRepository repository)
+    public MenuService(IMenuItemRepository repository, IMenuMapper mapper)
     {
         _repository = repository;
+        _mapper = mapper;
     }
 
     public async Task<IReadOnlyList<MenuItemResponse>> GetAllAsync(CancellationToken ct = default)
     {
         var items = await _repository.GetAllAsync(ct);
-        return items.Select(MapToResponse).ToList();
+        return _mapper.ToResponseList(items);
     }
 
     public async Task<MenuItemResponse?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         var item = await _repository.GetByIdAsync(id, ct);
-        return item is null ? null : MapToResponse(item);
+        return item is null ? null : _mapper.ToResponse(item);
     }
 
     public async Task<MenuItemResponse> CreateAsync(CreateMenuItemRequest request, CancellationToken ct = default)
@@ -38,7 +42,7 @@ public class MenuService : IMenuService
             new Money(request.Price));
 
         await _repository.AddAsync(item, ct);
-        return MapToResponse(item);
+        return _mapper.ToResponse(item);
     }
 
     public async Task<MenuItemResponse> UpdateAvailabilityAsync(
@@ -53,7 +57,7 @@ public class MenuService : IMenuService
             item.MarkAsUnavailable();
 
         await _repository.UpdateAsync(item, ct);
-        return MapToResponse(item);
+        return _mapper.ToResponse(item);
     }
 
     public async Task<MenuItemResponse> UpdatePriceAsync(
@@ -64,15 +68,6 @@ public class MenuService : IMenuService
 
         item.UpdatePrice(new Money(request.Price));
         await _repository.UpdateAsync(item, ct);
-        return MapToResponse(item);
+        return _mapper.ToResponse(item);
     }
-
-    // ── Mapping ──
-
-    private static MenuItemResponse MapToResponse(MenuItem item) =>
-        new(item.Id,
-            item.Name,
-            item.Category.ToString(),
-            item.Price.Amount,
-            item.IsAvailable);
 }

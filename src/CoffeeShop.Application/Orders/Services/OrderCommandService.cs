@@ -1,5 +1,7 @@
+using CoffeeShop.Application.Common.Time;
 using CoffeeShop.Application.Events;
 using CoffeeShop.Application.Orders.Dtos;
+using CoffeeShop.Application.Orders.Mappers;
 using CoffeeShop.Domain.Common.Exceptions;
 using CoffeeShop.Domain.Common.ValueObjects;
 using CoffeeShop.Domain.Orders.Contracts;
@@ -13,6 +15,7 @@ namespace CoffeeShop.Application.Orders.Services;
 /// <summary>
 /// Прикладний сервіс команд (Commands) — відповідає за зміну стану замовлень,
 /// розрахунок ціни через IOrderPricingService (OCP) та публікацію подій (SRP / ISP).
+/// Не має статичних залежностей (IDateTimeProvider, IOrderMapper впроваджуються через DI).
 /// </summary>
 public class OrderCommandService : IOrderCommandService
 {
@@ -20,17 +23,23 @@ public class OrderCommandService : IOrderCommandService
     private readonly IMenuCatalogGateway _menuCatalog;
     private readonly IEventBus _eventBus;
     private readonly IOrderPricingService _pricingService;
+    private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly IOrderMapper _mapper;
 
     public OrderCommandService(
         IOrderRepository orderRepository,
         IMenuCatalogGateway menuCatalog,
         IEventBus eventBus,
-        IOrderPricingService pricingService)
+        IOrderPricingService pricingService,
+        IDateTimeProvider dateTimeProvider,
+        IOrderMapper mapper)
     {
         _orderRepository = orderRepository;
         _menuCatalog = menuCatalog;
         _eventBus = eventBus;
         _pricingService = pricingService;
+        _dateTimeProvider = dateTimeProvider;
+        _mapper = mapper;
     }
 
     public async Task<OrderResponse> CreateAsync(CreateOrderRequest request, CancellationToken ct = default)
@@ -58,7 +67,8 @@ public class OrderCommandService : IOrderCommandService
         var order = new Order(
             Guid.NewGuid(),
             new CustomerName(request.CustomerName),
-            orderItems);
+            orderItems,
+            _dateTimeProvider.UtcNow);
 
         // Розрахунок та застосування найкращої знижки (OCP через IOrderPricingService)
         var discountResult = _pricingService.CalculateBestDiscount(order);
@@ -77,7 +87,7 @@ public class OrderCommandService : IOrderCommandService
             order.Items.Count,
             order.CreatedAt), ct);
 
-        return OrderQueryService.MapToResponse(order);
+        return _mapper.ToResponse(order);
     }
 
     public async Task<OrderResponse> ChangeStatusAsync(
@@ -109,14 +119,14 @@ public class OrderCommandService : IOrderCommandService
 
         await _orderRepository.UpdateAsync(order, ct);
 
-        // Публікація події про зміну життєвого циклу замовлення
+        // Публікація події про зміну життєвого циклу замовлення з використанням IDateTimeProvider
         await _eventBus.PublishAsync(new OrderStatusChangedEvent(
             order.Id,
             order.CustomerName.Value,
             previousStatus,
             order.Status.ToString(),
-            DateTime.UtcNow), ct);
+            _dateTimeProvider.UtcNow), ct);
 
-        return OrderQueryService.MapToResponse(order);
+        return _mapper.ToResponse(order);
     }
 }
