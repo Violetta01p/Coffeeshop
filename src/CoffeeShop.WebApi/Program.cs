@@ -1,9 +1,11 @@
+using CoffeeShop.Application;
 using CoffeeShop.Infrastructure;
 using CoffeeShop.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Шар інфраструктури (репозиторії, gateway, сервіси) ──
+// ── Composition Root: Модульна реєстрація залежностей по шарах ──
+builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
 // ── ASP.NET Core ──
@@ -15,7 +17,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "CoffeeShop API",
         Version = "v1",
-        Description = "API кав'ярні — практична робота: Чиста архітектура та DDD"
+        Description = "API кав'ярні — практична робота: Чиста архітектура, DDD, Event-Driven, SOLID та Dependency Injection"
     });
 });
 

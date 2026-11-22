@@ -220,29 +220,41 @@ src/
 │       └── Repositories/IOrderRepository.cs
 │
 ├── CoffeeShop.Application/         ➡️ залежить від Domain
+│   ├── Common/
+│   │   ├── Diagnostics/
+│   │   │   └── ILifetimeServices.cs 🔌 Демонстраційні сервіси Transient/Scoped/Singleton
+│   │   └── Time/
+│   │       └── IDateTimeProvider.cs 🔌 Абстракція часу (DIP/IoC замість DateTime.UtcNow)
 │   ├── Events/
 │   │   ├── IEventBus.cs            ⚡ Контракт шини подій
 │   │   └── IEventHandler.cs        ⚡ Контракт підписника/обробника
 │   ├── Menu/
 │   │   ├── Dtos/MenuDtos.cs
+│   │   ├── Mappers/                🔌 Stateless-мапери DTO (Transient)
+│   │   │   ├── IMenuMapper.cs
+│   │   │   └── MenuMapper.cs
 │   │   └── Services/
 │   │       ├── IMenuService.cs     💎 DIP: Інтерфейс для MenuController
 │   │       └── MenuService.cs
-│   └── Orders/
-│       ├── Dtos/OrderDtos.cs
-│       ├── Dtos/OrderAnalyticsDto.cs
-│       └── Services/
-│           ├── IOrderQueryService.cs       💎 SRP / ISP: Інтерфейс читання замовлень
-│           ├── IOrderCommandService.cs     💎 SRP / ISP: Інтерфейс команд замовлень
-│           ├── OrderQueryService.cs        💎 SRP: Читання замовлень
-│           ├── OrderCommandService.cs      💎 SRP: Команди та публікація подій
-│           ├── IOrderAnalyticsReader.cs    💎 ISP: Тільки читання аналітики
-│           ├── IOrderAnalyticsWriter.cs    💎 ISP: Тільки запис аналітики
-│           └── IOrderAnalyticsService.cs
+│   ├── Orders/
+│   │   ├── Dtos/OrderDtos.cs
+│   │   ├── Dtos/OrderAnalyticsDto.cs
+│   │   ├── Mappers/                🔌 Stateless-мапери DTO (Transient)
+│   │   │   ├── IOrderMapper.cs
+│   │   │   └── OrderMapper.cs
+│   │   └── Services/
+│   │       ├── IOrderQueryService.cs       💎 SRP / ISP: Інтерфейс читання замовлень
+│   │       ├── IOrderCommandService.cs     💎 SRP / ISP: Інтерфейс команд замовлень
+│   │       ├── OrderQueryService.cs        💎 SRP: Читання замовлень
+│   │       ├── OrderCommandService.cs      💎 SRP: Команди та публікація подій
+│   │       ├── IOrderAnalyticsReader.cs    💎 ISP: Тільки читання аналітики
+│   │       ├── IOrderAnalyticsWriter.cs    💎 ISP: Тільки запис аналітики
+│   │       └── IOrderAnalyticsService.cs
+│   └── DependencyInjection.cs      🔌 Composition Root шару Application
 │
 ├── CoffeeShop.Infrastructure/      ➡️ залежить від Application
 │   ├── Events/
-│   │   └── InProcessEventBus.cs    ⚡ In-Process шина на базі IServiceProvider
+│   │   └── InProcessEventBus.cs    ⚡ In-Process шина на базі IServiceProvider (Scoped)
 │   ├── Menu/InMemoryMenuItemRepository.cs
 │   ├── Orders/
 │   │   ├── InMemoryOrderRepository.cs
@@ -252,15 +264,18 @@ src/
 │   │       ├── OrderCreatedAnalyticsHandler.cs        💎 Залежить суто від IOrderAnalyticsWriter
 │   │       └── OrderStatusChangedNotificationHandler.cs 💎 Залежить суто від IOrderAnalyticsWriter
 │   ├── Gateways/MenuCatalogGateway.cs
-│   └── DependencyInjection.cs      💎 Реєстрація всіх абстракцій та політик
+│   ├── Services/
+│   │   └── SystemDateTimeProvider.cs 🔌 Singleton-провайдер часу
+│   └── DependencyInjection.cs      🔌 Composition Root шару Infrastructure
 │
 └── CoffeeShop.WebApi/              ➡️ залежить від Application + Infrastructure
     ├── Controllers/
     │   ├── MenuController.cs       💎 Залежить від IMenuService (DIP)
     │   ├── OrdersController.cs     💎 Залежить від IOrderCommandService, IOrderQueryService (DIP / ISP)
-    │   └── AnalyticsController.cs  💎 Залежить від IOrderAnalyticsReader (DIP / ISP)
+    │   ├── AnalyticsController.cs  💎 Залежить від IOrderAnalyticsReader (DIP / ISP)
+    │   └── DiagnosticsController.cs 🔌 GET /api/diagnostics/lifetimes
     ├── Middleware/ExceptionHandlingMiddleware.cs
-    └── Program.cs
+    └── Program.cs                  🔌 Підключення AddApplication() та AddInfrastructure()
 ```
 
 ---
@@ -323,6 +338,47 @@ src/
     - `LargeOrderDiscountPolicy` — 5% знижки на чеки від 300 грн.
   - Доменний сервіс `OrderPricingService : IOrderPricingService` приймає `IEnumerable<IDiscountPolicy>` через DI та обирає найбільш вигідну для клієнта знижку.
   - **Нові знижки додаються створенням нового класу-політики** без редагування існуючих класів. Якщо знижки немає, сума замовлення залишається без змін (зворотна сумісність).
+
+---
+
+## 🔌 Практична робота №4: Dependency Injection та інверсія керування (IoC)
+
+У межах ПЗ №4 реалізовано модульну конфігурацію DI-контейнера через патерн **Composition Root**, усунуто статичні та прямі залежності та впроваджено діагностику життєвих циклів:
+
+### 1. Усунення прямих та статичних залежностей
+* **Абстракція часу (`IDateTimeProvider`):** Прямі виклики `DateTime.UtcNow` замінено на ін'єкцію інтерфейсу `IDateTimeProvider` (реалізація `SystemDateTimeProvider` у `Infrastructure`). Це забезпечує 100% передбачуваність під час модульного тестування (можливість mock-увати час).
+* **Stateless-мапери DTO (`Transient`):** Логіку створення об'єктів відповідей `OrderResponse` та `MenuItemResponse` винесено з сервісів у легковагові мапери `IMenuMapper` та `IOrderMapper`, які впроваджуються через конструктор.
+
+### 2. Матриця життєвих циклів (Service Lifetimes)
+
+| Сервіс / Контракт | Життєвий цикл | Рівень | Обґрунтування вибору |
+| :--- | :--- | :--- | :--- |
+| `IMenuMapper` → `MenuMapper` | **Transient** | Application | Легковаговий stateless-компонент без внутрішнього стану. Створюється на вимогу та утилізується одразу після використання. |
+| `IOrderMapper` → `OrderMapper` | **Transient** | Application | Stateless-мапер замовлень, не зберігає стан. |
+| `ITransientService` → `TransientService` | **Transient** | Application | Демонстраційний сервіс для діагностики життєвих циклів. |
+| `IMenuService` → `MenuService` | **Scoped** | Application | Бізнес-сервіс варіантів використання меню. Створюється один на весь HTTP-запит. |
+| `IOrderQueryService` → `OrderQueryService` | **Scoped** | Application | Сервіс читання замовлень у межах запиту. |
+| `IOrderCommandService` → `OrderCommandService` | **Scoped** | Application | Сервіс команд замовлень, координує скоуплені залежності (EventBus, Gateway). |
+| `IOrderPricingService` → `OrderPricingService` | **Scoped** | Application | Доменний сервіс розрахунку цін і знижок у межах поточного запиту. |
+| `IMenuCatalogGateway` → `MenuCatalogGateway` | **Scoped** | Infrastructure | Міжконтекстний шлюз для безпечної взаємодії Orders → Menu в межах запиту. |
+| `IEventBus` → `InProcessEventBus` | **Scoped** | Infrastructure | **Захист від Captive Dependencies**: зареєстрований як Scoped, щоб безпечно резолвити скоуплені обробники подій у межах запиту без витоків пам'яті. |
+| `IEventHandler<T>` (усі обробники) | **Scoped** | Infrastructure | Обробники доменних подій, що працюють у скоупі поточного HTTP-запиту. |
+| `IScopedService` → `ScopedService` | **Scoped** | Application | Демонстраційний маркер-сервіс (однаковий у межах одного запиту, новий для наступного). |
+| `IDateTimeProvider` → `SystemDateTimeProvider` | **Singleton** | Infrastructure | Системний провайдер часу не містить змінного стану, достатньо одного екземпляра на весь час роботи програми. |
+| `IDiscountPolicy` (Bulk, Large) | **Singleton** | Application | Незмінні stateless-стратегії розрахунку знижок. |
+| `IMenuItemRepository`, `IOrderRepository` | **Singleton** | Infrastructure | In-Memory сховища на базі `ConcurrentDictionary` повинні зберігати дані меню та замовлень між усіма HTTP-запитами. |
+| `InMemoryOrderAnalyticsStore` | **Singleton** | Infrastructure | Спільне потокобезпечне сховище аналітики для `IOrderAnalyticsReader` і `IOrderAnalyticsWriter`. |
+| `ISingletonService` → `SingletonService` | **Singleton** | Application | Демонстраційний маркер-сервіс (один і той самий екземпляр між усіма запитами). |
+
+### 3. Захист від Captive Dependencies
+* Жоден `Singleton`-сервіс не залежить від `Scoped`-компонентів.
+* `InProcessEventBus` зареєстровано як `Scoped`, тому він отримує залежності з поточного `IServiceScope`, не створюючи заблокованих чи витокових ресурсів.
+
+### 4. Діагностичний ендпоінт перевірки життєвих циклів
+* `GET /api/diagnostics/lifetimes` — повертає по дві інстанції кожного типу сервісу:
+  * `transient`: два різні GUID в одному запиті (`areSameInRequest: false`);
+  * `scoped`: однакові GUID в одному запиті (`areSameInRequest: true`), але змінюються при кожному наступному HTTP-запиті;
+  * `singleton`: однакові GUID в одному запиті та ідентичні при будь-яких наступних запитах (`areSameInRequest: true`).
 
 ---
 
