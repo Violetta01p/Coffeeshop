@@ -4,9 +4,11 @@ namespace CoffeeShop.Application.Orders.Services;
 
 /// <summary>
 /// Інтерфейс виключно для команд створення та зміни стану замовлень (ISP / SRP).
+/// Приймає вхідні DTO (CreateOrderRequestDto, UpdateOrderStatusRequestDto)
+/// та повертає деталізований DTO замовлення (OrderDetailsDto).
 /// </summary>
 public interface IOrderCommandService
 {
-    Task<OrderResponse> CreateAsync(CreateOrderRequest request, CancellationToken ct = default);
-    Task<OrderResponse> ChangeStatusAsync(Guid id, ChangeStatusRequest request, CancellationToken ct = default);
+    Task<OrderDetailsDto> CreateAsync(CreateOrderRequestDto request, CancellationToken ct = default);
+    Task<OrderDetailsDto> ChangeStatusAsync(Guid id, UpdateOrderStatusRequestDto request, CancellationToken ct = default);
 }

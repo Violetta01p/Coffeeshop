@@ -4,12 +4,13 @@ namespace CoffeeShop.Application.Menu.Services;
 
 /// <summary>
 /// Інтерфейс сервісу меню (DIP).
+/// Працює виключно зі спеціалізованими DTO.
 /// </summary>
 public interface IMenuService
 {
-    Task<IReadOnlyList<MenuItemResponse>> GetAllAsync(CancellationToken ct = default);
-    Task<MenuItemResponse?> GetByIdAsync(Guid id, CancellationToken ct = default);
-    Task<MenuItemResponse> CreateAsync(CreateMenuItemRequest request, CancellationToken ct = default);
-    Task<MenuItemResponse> UpdateAvailabilityAsync(Guid id, UpdateAvailabilityRequest request, CancellationToken ct = default);
-    Task<MenuItemResponse> UpdatePriceAsync(Guid id, UpdatePriceRequest request, CancellationToken ct = default);
+    Task<IReadOnlyList<MenuItemSummaryDto>> GetAllAsync(CancellationToken ct = default);
+    Task<MenuItemSummaryDto?> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<MenuItemSummaryDto> CreateAsync(CreateMenuItemRequestDto request, CancellationToken ct = default);
+    Task<MenuItemSummaryDto> UpdateAvailabilityAsync(Guid id, UpdateMenuItemAvailabilityRequestDto request, CancellationToken ct = default);
+    Task<MenuItemSummaryDto> UpdatePriceAsync(Guid id, UpdateMenuItemPriceRequestDto request, CancellationToken ct = default);
 }

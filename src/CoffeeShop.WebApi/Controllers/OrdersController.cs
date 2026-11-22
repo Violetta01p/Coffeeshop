@@ -20,42 +20,42 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// Отримати всі замовлення (через IOrderQueryService - ISP/SRP/DIP).
+    /// Отримати компактний список усіх замовлень (OrderSummaryDto без важкого масиву items).
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<OrderResponse>>> GetAll(CancellationToken ct)
+    public async Task<ActionResult<IReadOnlyList<OrderSummaryDto>>> GetAll(CancellationToken ct)
     {
         var orders = await _orderQueryService.GetAllAsync(ct);
         return Ok(orders);
     }
 
     /// <summary>
-    /// Отримати замовлення за Id (через IOrderQueryService - ISP/SRP/DIP).
+    /// Отримати повну інформацію про замовлення за Id (OrderDetailsDto з items та знижками).
     /// </summary>
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<OrderResponse>> GetById(Guid id, CancellationToken ct)
+    public async Task<ActionResult<OrderDetailsDto>> GetById(Guid id, CancellationToken ct)
     {
         var order = await _orderQueryService.GetByIdAsync(id, ct);
         return order is null ? NotFound() : Ok(order);
     }
 
     /// <summary>
-    /// Створити нове замовлення (через IOrderCommandService - ISP/SRP/DIP).
+    /// Створити нове замовлення (повертає деталізований OrderDetailsDto).
     /// </summary>
     [HttpPost]
-    public async Task<ActionResult<OrderResponse>> Create(
-        [FromBody] CreateOrderRequest request, CancellationToken ct)
+    public async Task<ActionResult<OrderDetailsDto>> Create(
+        [FromBody] CreateOrderRequestDto request, CancellationToken ct)
     {
         var order = await _orderCommandService.CreateAsync(request, ct);
         return CreatedAtAction(nameof(GetById), new { id = order.Id }, order);
     }
 
     /// <summary>
-    /// Змінити статус замовлення (через IOrderCommandService - ISP/SRP/DIP).
+    /// Змінити статус замовлення (повертає оновлений OrderDetailsDto).
     /// </summary>
     [HttpPatch("{id:guid}/status")]
-    public async Task<ActionResult<OrderResponse>> ChangeStatus(
-        Guid id, [FromBody] ChangeStatusRequest request, CancellationToken ct)
+    public async Task<ActionResult<OrderDetailsDto>> ChangeStatus(
+        Guid id, [FromBody] UpdateOrderStatusRequestDto request, CancellationToken ct)
     {
         var order = await _orderCommandService.ChangeStatusAsync(id, request, ct);
         return Ok(order);

@@ -14,9 +14,10 @@ using CoffeeShop.Domain.Orders.Repositories;
 namespace CoffeeShop.Application.Orders.Services;
 
 /// <summary>
-/// Прикладний сервіс команд (Commands) — відповідає за зміну стану замовлень,
-/// розрахунок ціни через IOrderPricingService (OCP), атомарне збереження через IUnitOfWork
-/// та публікацію подій лише після успішного збереження змін (Transactional Consistency).
+/// Прикладний сервіс команд (Commands) — відповідає лише за зміну стану замовлень (SRP / ISP).
+/// Усі мутації стану фіксуються в БД атомарно через IUnitOfWork.
+/// Мапінг між сутностями та DTO повністю делеговано IOrderMapper.
+/// Жодного ручного new ...Dto(...) всередині сервісу не виконується.
 /// </summary>
 public class OrderCommandService : IOrderCommandService
 {
@@ -46,7 +47,7 @@ public class OrderCommandService : IOrderCommandService
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<OrderResponse> CreateAsync(CreateOrderRequest request, CancellationToken ct = default)
+    public async Task<OrderDetailsDto> CreateAsync(CreateOrderRequestDto request, CancellationToken ct = default)
     {
         if (request.Items is null || request.Items.Count == 0)
             throw new DomainException("Замовлення повинно містити хоча б одну позицію.");
@@ -94,34 +95,40 @@ public class OrderCommandService : IOrderCommandService
             order.Items.Count,
             order.CreatedAt), ct);
 
-        return _mapper.ToResponse(order);
+        return _mapper.MapToDetails(order);
     }
 
-    public async Task<OrderResponse> ChangeStatusAsync(
-        Guid id, ChangeStatusRequest request, CancellationToken ct = default)
+    public async Task<OrderDetailsDto> ChangeStatusAsync(
+        Guid id, UpdateOrderStatusRequestDto request, CancellationToken ct = default)
     {
         var order = await _orderRepository.GetByIdAsync(id, ct)
             ?? throw new KeyNotFoundException($"Замовлення з Id={id} не знайдено.");
 
         var previousStatus = order.Status.ToString();
 
-        switch (request.Action.ToLowerInvariant())
+        var action = (request.TargetAction ?? string.Empty).Trim().ToLowerInvariant();
+
+        switch (action)
         {
             case "prepare":
+            case "preparing":
                 order.StartPreparing();
                 break;
             case "ready":
                 order.MarkAsReady();
                 break;
             case "complete":
+            case "completed":
                 order.Complete();
                 break;
             case "cancel":
+            case "cancelled":
+            case "canceled":
                 order.Cancel();
                 break;
             default:
                 throw new DomainException(
-                    $"Невідома дія «{request.Action}». Допустимі: prepare, ready, complete, cancel.");
+                    $"Невідома дія або статус «{request.TargetAction}». Допустимі значення: prepare, ready, complete, cancel.");
         }
 
         await _orderRepository.UpdateAsync(order, ct);
@@ -137,6 +144,6 @@ public class OrderCommandService : IOrderCommandService
             order.Status.ToString(),
             _dateTimeProvider.UtcNow), ct);
 
-        return _mapper.ToResponse(order);
+        return _mapper.MapToDetails(order);
     }
 }

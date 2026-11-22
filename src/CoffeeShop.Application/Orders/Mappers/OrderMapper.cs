@@ -5,25 +5,39 @@ namespace CoffeeShop.Application.Orders.Mappers;
 
 /// <summary>
 /// Stateless-мапер замовлень (Transient).
+/// Реалізує мапінг доменних сутностей у спеціалізовані вхідні/вихідні DTO (Summary, Details).
 /// </summary>
 public class OrderMapper : IOrderMapper
 {
-    public OrderResponse ToResponse(Order order) =>
+    public OrderSummaryDto MapToSummary(Order order) =>
         new(order.Id,
             order.CustomerName.Value,
             order.Status.ToString(),
-            order.CreatedAt,
+            order.Items.Count,
             order.TotalAmount.Amount,
-            order.Items.Select(i => new OrderItemResponse(
-                i.Id,
-                i.MenuItemId,
-                i.ProductName,
-                i.UnitPrice.Amount,
-                i.Quantity,
-                i.Subtotal.Amount)).ToList(),
+            DateTime.SpecifyKind(order.CreatedAt, DateTimeKind.Utc));
+
+    public IReadOnlyList<OrderSummaryDto> MapToSummaryList(IEnumerable<Order> orders) =>
+        orders.Select(MapToSummary).ToList();
+
+    public OrderDetailsDto MapToDetails(Order order) =>
+        new(order.Id,
+            order.CustomerName.Value,
+            order.Status.ToString(),
+            DateTime.SpecifyKind(order.CreatedAt, DateTimeKind.Utc),
+            order.TotalAmount.Amount,
+            MapItemsToDtoList(order.Items),
             order.Discount.Amount,
             order.AppliedDiscountName);
 
-    public IReadOnlyList<OrderResponse> ToResponseList(IEnumerable<Order> orders) =>
-        orders.Select(ToResponse).ToList();
+    public OrderItemDto MapItemToDto(OrderItem item) =>
+        new(item.Id,
+            item.MenuItemId,
+            item.ProductName,
+            item.UnitPrice.Amount,
+            item.Quantity,
+            item.Subtotal.Amount);
+
+    public IReadOnlyList<OrderItemDto> MapItemsToDtoList(IEnumerable<OrderItem> items) =>
+        items.Select(MapItemToDto).ToList();
 }
