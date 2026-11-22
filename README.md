@@ -223,8 +223,9 @@ src/
 │   ├── Common/
 │   │   ├── Diagnostics/
 │   │   │   └── ILifetimeServices.cs 🔌 Демонстраційні сервіси Transient/Scoped/Singleton
-│   │   └── Time/
-│   │       └── IDateTimeProvider.cs 🔌 Абстракція часу (DIP/IoC замість DateTime.UtcNow)
+│   │   ├── Time/
+│   │   │   └── IDateTimeProvider.cs 🔌 Абстракція часу (DIP/IoC замість DateTime.UtcNow)
+│   │   └── IUnitOfWork.cs          💾 Контракт патерну Unit of Work
 │   ├── Events/
 │   │   ├── IEventBus.cs            ⚡ Контракт шини подій
 │   │   └── IEventHandler.cs        ⚡ Контракт підписника/обробника
@@ -235,29 +236,32 @@ src/
 │   │   │   └── MenuMapper.cs
 │   │   └── Services/
 │   │       ├── IMenuService.cs     💎 DIP: Інтерфейс для MenuController
-│   │       └── MenuService.cs
-│   ├── Orders/
-│   │   ├── Dtos/OrderDtos.cs
-│   │   ├── Dtos/OrderAnalyticsDto.cs
-│   │   ├── Mappers/                🔌 Stateless-мапери DTO (Transient)
-│   │   │   ├── IOrderMapper.cs
-│   │   │   └── OrderMapper.cs
-│   │   └── Services/
-│   │       ├── IOrderQueryService.cs       💎 SRP / ISP: Інтерфейс читання замовлень
-│   │       ├── IOrderCommandService.cs     💎 SRP / ISP: Інтерфейс команд замовлень
-│   │       ├── OrderQueryService.cs        💎 SRP: Читання замовлень
-│   │       ├── OrderCommandService.cs      💎 SRP: Команди та публікація подій
-│   │       ├── IOrderAnalyticsReader.cs    💎 ISP: Тільки читання аналітики
-│   │       ├── IOrderAnalyticsWriter.cs    💎 ISP: Тільки запис аналітики
-│   │       └── IOrderAnalyticsService.cs
+│   │       └── MenuService.cs      💾 Використовує IUnitOfWork для збереження
+│   └── Orders/
+│       ├── Dtos/OrderDtos.cs
+│       ├── Dtos/OrderAnalyticsDto.cs
+│       ├── Mappers/                🔌 Stateless-мапери DTO (Transient)
+│       │   ├── IOrderMapper.cs
+│       │   └── OrderMapper.cs
+│       └── Services/
+│           ├── IOrderQueryService.cs       💎 SRP / ISP: Інтерфейс читання замовлень
+│           ├── IOrderCommandService.cs     💎 SRP / ISP: Інтерфейс команд замовлень
+│           ├── OrderQueryService.cs        💎 SRP: Читання замовлень
+│           ├── OrderCommandService.cs      💾 Атомарне збереження IUnitOfWork перед публікацією подій
+│           ├── IOrderAnalyticsReader.cs    💎 ISP: Тільки читання аналітики
+│           ├── IOrderAnalyticsWriter.cs    💎 ISP: Тільки запис аналітики
+│           └── IOrderAnalyticsService.cs
 │   └── DependencyInjection.cs      🔌 Composition Root шару Application
 │
 ├── CoffeeShop.Infrastructure/      ➡️ залежить від Application
 │   ├── Events/
 │   │   └── InProcessEventBus.cs    ⚡ In-Process шина на базі IServiceProvider (Scoped)
-│   ├── Menu/InMemoryMenuItemRepository.cs
+│   ├── Persistence/                💾 Патерни Repository та Unit of Work
+│   │   ├── InMemoryDataStore.cs    💾 Singleton: централізовані колекції меню і замовлень
+│   │   ├── InMemoryUnitOfWork.cs   💾 Scoped: черга операцій та атомарний коміт
+│   │   ├── InMemoryMenuItemRepository.cs 💾 Scoped: репозиторій позицій меню
+│   │   └── InMemoryOrderRepository.cs    💾 Scoped: репозиторій замовлень
 │   ├── Orders/
-│   │   ├── InMemoryOrderRepository.cs
 │   │   ├── Analytics/InMemoryOrderAnalyticsStore.cs   💎 Реалізує IOrderAnalyticsReader та Writer
 │   │   └── Handlers/
 │   │       ├── OrderCreatedNotificationHandler.cs
@@ -379,6 +383,26 @@ src/
   * `transient`: два різні GUID в одному запиті (`areSameInRequest: false`);
   * `scoped`: однакові GUID в одному запиті (`areSameInRequest: true`), але змінюються при кожному наступному HTTP-запиті;
   * `singleton`: однакові GUID в одному запиті та ідентичні при будь-яких наступних запитах (`areSameInRequest: true`).
+
+---
+
+## 💾 Практична робота №5: Патерни Repository та Unit of Work
+
+У межах ПЗ №5 реалізовано патерни **Repository** та **Unit of Work** для забезпечення атомарності змін у сховищі даних та узгодженості з подійно-орієнтованою архітектурою:
+
+### 1. Роль та призначення `IUnitOfWork`
+* **Відокремлення інтерфейсів:** Інтерфейс [`IUnitOfWork`](file:///Users/violetta/Documents/CoffeeShop/src/CoffeeShop.Application/Common/IUnitOfWork.cs) розміщено в шарі `Application` (Clean Architecture), що захищає прикладні сервіси від прив'язки до деталей конкретної БД.
+* **Атомарність (All-or-Nothing):** Усі методи запису репозиторіїв (`AddAsync`, `UpdateAsync`, `DeleteAsync`) не мутують колекції негайно, а реєструють відкладені дії у черзі `InMemoryUnitOfWork.RegisterAction(Action)`.
+* **Фіксування змін (`SaveChangesAsync`):** Лише при виклику `await _unitOfWork.SaveChangesAsync(ct)` всі накопичені в межах запиту операції атомарно виконуються над централізованим сховищем [`InMemoryDataStore`](file:///Users/violetta/Documents/CoffeeShop/src/CoffeeShop.Infrastructure/Persistence/InMemoryDataStore.cs). Якщо до фіксування трапляється помилка — жодна зміна не потрапляє у сховище.
+
+### 2. Транзакційна узгодженість із шиною подій (Transactional Outbox-like Consistency)
+* У [`OrderCommandService`](file:///Users/violetta/Documents/CoffeeShop/src/CoffeeShop.Application/Orders/Services/OrderCommandService.cs) доменні події (`OrderCreatedEvent`, `OrderStatusChangedEvent`) публікуються у шину `IEventBus` **виключно після успішного виконання `_unitOfWork.SaveChangesAsync(ct)`**.
+* Це гарантує, що сповіщення на кухню, клієнту та обробники аналітики спрацюють лише тоді, коли замовлення гарантовано збережене у сховищі.
+
+### 3. Архітектура компонентів та життєві цикли
+* **`InMemoryDataStore` (Singleton):** Централізоване сховище колекцій `MenuItems` та `Orders`, спільне для всього застосунку.
+* **`InMemoryUnitOfWork` (Scoped):** Створюється один на HTTP-запит, накопичує операції та очищає чергу після збереження.
+* **`InMemoryMenuItemRepository` / `InMemoryOrderRepository` (Scoped):** Читають дані напряму з `InMemoryDataStore`, а запис делегують поточному `InMemoryUnitOfWork`.
 
 ---
 

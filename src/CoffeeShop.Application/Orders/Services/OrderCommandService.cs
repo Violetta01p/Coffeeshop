@@ -1,3 +1,4 @@
+using CoffeeShop.Application.Common;
 using CoffeeShop.Application.Common.Time;
 using CoffeeShop.Application.Events;
 using CoffeeShop.Application.Orders.Dtos;
@@ -14,8 +15,8 @@ namespace CoffeeShop.Application.Orders.Services;
 
 /// <summary>
 /// Прикладний сервіс команд (Commands) — відповідає за зміну стану замовлень,
-/// розрахунок ціни через IOrderPricingService (OCP) та публікацію подій (SRP / ISP).
-/// Не має статичних залежностей (IDateTimeProvider, IOrderMapper впроваджуються через DI).
+/// розрахунок ціни через IOrderPricingService (OCP), атомарне збереження через IUnitOfWork
+/// та публікацію подій лише після успішного збереження змін (Transactional Consistency).
 /// </summary>
 public class OrderCommandService : IOrderCommandService
 {
@@ -25,6 +26,7 @@ public class OrderCommandService : IOrderCommandService
     private readonly IOrderPricingService _pricingService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly IOrderMapper _mapper;
+    private readonly IUnitOfWork _unitOfWork;
 
     public OrderCommandService(
         IOrderRepository orderRepository,
@@ -32,7 +34,8 @@ public class OrderCommandService : IOrderCommandService
         IEventBus eventBus,
         IOrderPricingService pricingService,
         IDateTimeProvider dateTimeProvider,
-        IOrderMapper mapper)
+        IOrderMapper mapper,
+        IUnitOfWork unitOfWork)
     {
         _orderRepository = orderRepository;
         _menuCatalog = menuCatalog;
@@ -40,6 +43,7 @@ public class OrderCommandService : IOrderCommandService
         _pricingService = pricingService;
         _dateTimeProvider = dateTimeProvider;
         _mapper = mapper;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<OrderResponse> CreateAsync(CreateOrderRequest request, CancellationToken ct = default)
@@ -79,7 +83,10 @@ public class OrderCommandService : IOrderCommandService
 
         await _orderRepository.AddAsync(order, ct);
 
-        // Публікація доменної події про створення замовлення
+        // Атомарне фіксування змін у сховищі даних
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        // Публікація доменної події про створення замовлення ЛИШЕ після успішного коміту транзакції
         await _eventBus.PublishAsync(new OrderCreatedEvent(
             order.Id,
             order.CustomerName.Value,
@@ -119,7 +126,10 @@ public class OrderCommandService : IOrderCommandService
 
         await _orderRepository.UpdateAsync(order, ct);
 
-        // Публікація події про зміну життєвого циклу замовлення з використанням IDateTimeProvider
+        // Атомарне фіксування змін у сховищі даних
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        // Публікація події про зміну життєвого циклу замовлення ЛИШЕ після збереження змін
         await _eventBus.PublishAsync(new OrderStatusChangedEvent(
             order.Id,
             order.CustomerName.Value,
