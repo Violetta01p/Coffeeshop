@@ -209,29 +209,70 @@ src/
 │       │   ├── Order.cs
 │       │   └── OrderItem.cs
 │       ├── Enums/OrderStatus.cs
+│       ├── Events/
+│       │   └── OrderEvents.cs      ⚡ Доменні події (OrderCreated, OrderStatusChanged)
 │       └── Repositories/IOrderRepository.cs
 │
 ├── CoffeeShop.Application/         ➡️ залежить від Domain
+│   ├── Events/
+│   │   ├── IEventBus.cs            ⚡ Контракт шини подій
+│   │   └── IEventHandler.cs        ⚡ Контракт підписника/обробника
 │   ├── Menu/
 │   │   ├── Dtos/MenuDtos.cs
 │   │   └── Services/MenuService.cs
 │   └── Orders/
 │       ├── Dtos/OrderDtos.cs
-│       └── Services/OrderService.cs
+│       ├── Dtos/OrderAnalyticsDto.cs
+│       └── Services/
+│           ├── OrderService.cs     ⚡ Публікує події через IEventBus
+│           └── IOrderAnalyticsService.cs
 │
 ├── CoffeeShop.Infrastructure/      ➡️ залежить від Application
+│   ├── Events/
+│   │   └── InProcessEventBus.cs    ⚡ In-Process шина на базі IServiceProvider
 │   ├── Menu/InMemoryMenuItemRepository.cs
-│   ├── Orders/InMemoryOrderRepository.cs
+│   ├── Orders/
+│   │   ├── InMemoryOrderRepository.cs
+│   │   ├── Analytics/InMemoryOrderAnalyticsStore.cs
+│   │   └── Handlers/
+│   │       ├── OrderCreatedNotificationHandler.cs
+│   │       ├── OrderCreatedAnalyticsHandler.cs
+│   │       └── OrderStatusChangedNotificationHandler.cs
 │   ├── Gateways/MenuCatalogGateway.cs
 │   └── DependencyInjection.cs
 │
 └── CoffeeShop.WebApi/              ➡️ залежить від Application + Infrastructure
     ├── Controllers/
     │   ├── MenuController.cs
-    │   └── OrdersController.cs
+    │   ├── OrdersController.cs
+    │   └── AnalyticsController.cs  ⚡ GET /api/analytics
     ├── Middleware/ExceptionHandlingMiddleware.cs
     └── Program.cs
 ```
+
+---
+
+## ⚡ Практична робота №2: Подієво-орієнтований підхід (Event-Driven Design)
+
+У межах ПЗ №2 реалізовано внутрішньопроцесну подієво-орієнтовану модель (In-Process Event-Driven Architecture), яка забезпечує **слабку зв'язаність (Loose Coupling)** та дотримання принципів Clean Architecture.
+
+### 1. Архітектурні компоненти
+- **Контракти подій (Domain):**
+  - `OrderCreatedEvent` — публікується при створенні нового замовлення (містить `OrderId`, `CustomerName`, `TotalAmount`, `ItemsCount`, `CreatedAtUtc`).
+  - `OrderStatusChangedEvent` — публікується при зміні статусу замовлення (`OrderId`, `CustomerName`, `PreviousStatus`, `NewStatus`, `ChangedAtUtc`).
+- **Шина подій (Application / Infrastructure):**
+  - `IEventBus` (Application) — інтерфейс шини для відправки подій `PublishAsync<TEvent>(evt, ct)`.
+  - `IEventHandler<in TEvent>` (Application) — контракт обробників.
+  - `InProcessEventBus` (Infrastructure) — резолвить усіх зареєстрованих підписників через `IServiceProvider.GetServices<IEventHandler<TEvent>>()` та асинхронно викликає їх.
+- **Продюсер:**
+  - `OrderService` знає **лише** про `IEventBus`. Жодної прямої залежності від сервісів сповіщень чи аналітики.
+- **Споживачі (Consumers / Handlers):**
+  1. `OrderCreatedNotificationHandler` — імітує сповіщення баристи / кухні про надходження замовлення.
+  2. `OrderCreatedAnalyticsHandler` — автоматично агрегує виручку та кількість замовлень у `InMemoryOrderAnalyticsStore`.
+  3. `OrderStatusChangedNotificationHandler` — надсилає гостю контекстне сповіщення при переходах статусів (`Preparing`, `Ready`, `Completed`, `Cancelled`).
+
+### 2. Ендпоінт демонстрації роботи обробників
+- `GET /api/analytics` — повертає зведену статистику, накопичену аналітичним обробником подій у реальному часі.
 
 ---
 
@@ -240,3 +281,4 @@ src/
 - .NET 8 / ASP.NET Core Web API
 - Swagger / OpenAPI (Swashbuckle)
 - InMemory-сховище (ConcurrentDictionary) — проєкт запускається без налаштування БД
+- In-Process Event Bus (Event-Driven Architecture)

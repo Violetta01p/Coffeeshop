@@ -1,8 +1,10 @@
+using CoffeeShop.Application.Events;
 using CoffeeShop.Application.Orders.Dtos;
 using CoffeeShop.Domain.Common.Exceptions;
 using CoffeeShop.Domain.Common.ValueObjects;
 using CoffeeShop.Domain.Orders.Contracts;
 using CoffeeShop.Domain.Orders.Entities;
+using CoffeeShop.Domain.Orders.Events;
 using CoffeeShop.Domain.Orders.Repositories;
 
 namespace CoffeeShop.Application.Orders.Services;
@@ -14,11 +16,16 @@ public class OrderService
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IMenuCatalogGateway _menuCatalog;
+    private readonly IEventBus _eventBus;
 
-    public OrderService(IOrderRepository orderRepository, IMenuCatalogGateway menuCatalog)
+    public OrderService(
+        IOrderRepository orderRepository,
+        IMenuCatalogGateway menuCatalog,
+        IEventBus eventBus)
     {
         _orderRepository = orderRepository;
         _menuCatalog = menuCatalog;
+        _eventBus = eventBus;
     }
 
     public async Task<OrderResponse> CreateAsync(CreateOrderRequest request, CancellationToken ct = default)
@@ -49,6 +56,15 @@ public class OrderService
             orderItems);
 
         await _orderRepository.AddAsync(order, ct);
+
+        // Публікація доменної події про створення замовлення
+        await _eventBus.PublishAsync(new OrderCreatedEvent(
+            order.Id,
+            order.CustomerName.Value,
+            order.TotalAmount.Amount,
+            order.Items.Count,
+            order.CreatedAt), ct);
+
         return MapToResponse(order);
     }
 
@@ -70,6 +86,8 @@ public class OrderService
         var order = await _orderRepository.GetByIdAsync(id, ct)
             ?? throw new KeyNotFoundException($"Замовлення з Id={id} не знайдено.");
 
+        var previousStatus = order.Status.ToString();
+
         switch (request.Action.ToLowerInvariant())
         {
             case "prepare":
@@ -90,6 +108,15 @@ public class OrderService
         }
 
         await _orderRepository.UpdateAsync(order, ct);
+
+        // Публікація події про зміну життєвого циклу замовлення
+        await _eventBus.PublishAsync(new OrderStatusChangedEvent(
+            order.Id,
+            order.CustomerName.Value,
+            previousStatus,
+            order.Status.ToString(),
+            DateTime.UtcNow), ct);
+
         return MapToResponse(order);
     }
 
