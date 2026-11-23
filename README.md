@@ -234,23 +234,30 @@ src/
 │   │   ├── Mappers/                🔌 Stateless-мапери DTO (Transient)
 │   │   │   ├── IMenuMapper.cs
 │   │   │   └── MenuMapper.cs
-│   │   └── Services/
-│   │       ├── IMenuService.cs     💎 DIP: Інтерфейс для MenuController
-│   │       └── MenuService.cs      💾 Використовує IUnitOfWork для збереження
+│   │   ├── Services/
+│   │   │   ├── IMenuService.cs     💎 DIP: Інтерфейс для MenuController
+│   │   │   └── MenuService.cs      💾 Використовує IUnitOfWork для збереження
+│   │   └── Validators/             🛡️ FluentValidation: синтаксична та семантична валідація
+│   │       ├── CreateMenuItemRequestDtoValidator.cs
+│   │       └── UpdateMenuItemPriceRequestDtoValidator.cs
 │   └── Orders/
 │       ├── Dtos/OrderDtos.cs
 │       ├── Dtos/OrderAnalyticsDto.cs
 │       ├── Mappers/                🔌 Stateless-мапери DTO (Transient)
 │       │   ├── IOrderMapper.cs
 │       │   └── OrderMapper.cs
-│       └── Services/
-│           ├── IOrderQueryService.cs       💎 SRP / ISP: Інтерфейс читання замовлень
-│           ├── IOrderCommandService.cs     💎 SRP / ISP: Інтерфейс команд замовлень
-│           ├── OrderQueryService.cs        💎 SRP: Читання замовлень
-│           ├── OrderCommandService.cs      💾 Атомарне збереження IUnitOfWork перед публікацією подій
-│           ├── IOrderAnalyticsReader.cs    💎 ISP: Тільки читання аналітики
-│           ├── IOrderAnalyticsWriter.cs    💎 ISP: Тільки запис аналітики
-│           └── IOrderAnalyticsService.cs
+│       ├── Services/
+│       │   ├── IOrderQueryService.cs       💎 SRP / ISP: Інтерфейс читання замовлень
+│       │   ├── IOrderCommandService.cs     💎 SRP / ISP: Інтерфейс команд замовлень
+│       │   ├── OrderQueryService.cs        💎 SRP: Читання замовлень
+│       │   ├── OrderCommandService.cs      💾 Атомарне збереження IUnitOfWork перед публікацією подій
+│       │   ├── IOrderAnalyticsReader.cs    💎 ISP: Тільки читання аналітики
+│       │   ├── IOrderAnalyticsWriter.cs    💎 ISP: Тільки запис аналітики
+│       │   └── IOrderAnalyticsService.cs
+│       └── Validators/             🛡️ FluentValidation: синтаксична та семантична валідація
+│           ├── OrderItemRequestDtoValidator.cs
+│           ├── CreateOrderRequestDtoValidator.cs
+│           └── UpdateOrderStatusRequestDtoValidator.cs
 │   └── DependencyInjection.cs      🔌 Composition Root шару Application
 │
 ├── CoffeeShop.Infrastructure/      ➡️ залежить від Application
@@ -443,9 +450,76 @@ src/
 
 ---
 
+## 🛡️ Практична робота №8: Валідація даних у прикладному рівні засобами FluentValidation
+
+У межах ПЗ №8 реалізовано автоматичну перевірку вхідних даних на прикладному рівні (`CoffeeShop.Application`) за допомогою бібліотеки **FluentValidation** із дотриманням принципів Clean Architecture:
+- Доменний рівень `CoffeeShop.Domain` залишається повністю чистим (0 пакетів і посилань).
+- Валідація DTO виконується автоматично до виклику дій контролерів та прикладних сервісів через конвеєр `FluentValidation.AspNetCore`.
+- При некоректних даних клієнт отримує стандартну відповідь `400 Bad Request` у форматі `ValidationProblemDetails` із переліком усіх порушених правил для кожного поля.
+
+### 1. Синтаксична та семантична валідація
+
+У системі чітко розмежовано два рівні валідації:
+1. **Синтаксична валідація (структура та базові обмеження полів):**
+   - Перевірка обов'язковості заповнення (`NotEmpty`).
+   - Межі довжини рядків (наприклад, ім'я клієнта від 2 до 64 символів, назва страви від 2 до 100 символів).
+   - Числові діапазони (кількість товару від 1 до 20, ціна від 0.01 до 10 000 грн).
+2. **Семантична валідація (бізнес-коректність вхідного запиту):**
+   - **Унікальність позицій:** У межах одного замовлення неприпустиме дублювання одного й того самого `MenuItemId`.
+   - **Сумарний ліміт позицій:** Загальна кількість одиниць товару в замовленні не може перевищувати 50.
+   - **Допустимість категорії:** Рядкова категорія страви меню повинна успішно транслюватися у валідний `MenuCategory` (`HotDrink`, `ColdDrink`, `Dessert`, `Snack`).
+   - **Допустимість дії над статусом:** Дія зміни статусу повинна входити до списку дозволених переходів (`prepare`, `ready`, `complete`, `cancel` тощо).
+
+### 2. Реалізовані валідатори (CoffeeShop.Application)
+
+| Валідатор | Цільовий DTO | Синтаксичні правила | Семантичні правила |
+| :--- | :--- | :--- | :--- |
+| `OrderItemRequestDtoValidator` | `OrderItemRequestDto` | • `MenuItemId` не порожній GUID.<br>• `Quantity` від 1 до 20. | — |
+| `CreateOrderRequestDtoValidator` | `CreateOrderRequestDto` | • `CustomerName` обов'язкове, довжина 2..64 символи.<br>• `Items` не порожній список.<br>• Кожен елемент валідується через `OrderItemRequestDtoValidator`. | • Заборонено дублювання однакового `MenuItemId` у кошику.<br>• Загальна сума всіх `Quantity` <= 50. |
+| `UpdateOrderStatusRequestDtoValidator` | `UpdateOrderStatusRequestDto` | • `TargetAction` обов'язкове, непорожнє. | • Значення `TargetAction` має бути одним із дозволених переходів: `prepare`, `ready`, `complete`, `cancel`, `preparing`, `completed`, `cancelled`. |
+| `CreateMenuItemRequestDtoValidator` | `CreateMenuItemRequestDto` | • `Name` обов'язкове, довжина 2..100 символів.<br>• `Price` строго > 0 та <= 10 000 грн. | • `Category` повинна бути однією з валідних категорій меню (`HotDrink`, `ColdDrink`, `Dessert`, `Snack`). |
+| `UpdateMenuItemPriceRequestDtoValidator` | `UpdateMenuItemPriceRequestDto` | • `Price` строго > 0 та <= 10 000 грн. | — |
+
+### 3. Автоматична реєстрація та інтеграція в ASP.NET Core
+
+1. **Реєстрація у збірці Application (`DependencyInjection.cs`):**
+   ```csharp
+   services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
+   ```
+   Всі валідатори автоматично скануються та реєструються у DI-контейнері як `Scoped`.
+
+2. **Підключення авто-валідації у WebApi (`Program.cs`):**
+   ```csharp
+   builder.Services.AddControllers();
+   builder.Services.AddFluentValidationAutoValidation();
+   ```
+   При надходженні HTTP-запиту валідація викликається автоматично перед виконанням коду дій у контролерах. Якщо модель не пройшла перевірку, контролер навіть не викликається, а повертається стандартизований `400 Bad Request` із структурою `ValidationProblemDetails`.
+
+### 4. Приклад відповіді при помилці валідації (HTTP 400)
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "CustomerName": [
+      "Ім'я клієнта обов'язкове для замовлення."
+    ],
+    "Items": [
+      "Замовлення повинно містити хоча б один товар.",
+      "Замовлення містить дублікати однієї позиції меню. Об'єднайте кількість в один рядок."
+    ]
+  }
+}
+```
+
+---
+
 ## 📝 Технології
 
 - .NET 8 / ASP.NET Core Web API
+- FluentValidation 11.x & FluentValidation.AspNetCore 11.x
 - Swagger / OpenAPI (Swashbuckle)
 - InMemory-сховище (ConcurrentDictionary) — проєкт запускається без налаштування БД
 - In-Process Event Bus (Event-Driven Architecture)
