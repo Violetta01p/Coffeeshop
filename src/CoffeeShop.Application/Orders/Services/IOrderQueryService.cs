@@ -4,10 +4,10 @@ namespace CoffeeShop.Application.Orders.Services;
 
 /// <summary>
 /// Інтерфейс виключно для операцій читання замовлень (ISP / SRP).
-/// Контролери та клієнти, яким потрібні лише дані замовлень, не залежать від команд мутації.
+/// Працює зі спеціалізованими DTO: OrderSummaryDto для списку та OrderDetailsDto для одного замовлення.
 /// </summary>
 public interface IOrderQueryService
 {
-    Task<IReadOnlyList<OrderResponse>> GetAllAsync(CancellationToken ct = default);
-    Task<OrderResponse?> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<IReadOnlyList<OrderSummaryDto>> GetAllAsync(CancellationToken ct = default);
+    Task<OrderDetailsDto?> GetByIdAsync(Guid id, CancellationToken ct = default);
 }

@@ -1,23 +1,35 @@
-using CoffeeShop.Domain.Menu.Enums;
-
 namespace CoffeeShop.Application.Menu.Dtos;
 
-// ── Запити ──
+// ── Вхідні DTO (Requests) ──
 
-public sealed record CreateMenuItemRequest(
+/// <summary>
+/// Вхідний DTO для створення нової позиції меню (POST /api/Menu).
+/// Category приймається як string ("HotDrink", "ColdDrink", "Dessert", "Snack"),
+/// щоб унеможливити витік доменного enum у шар WebApi.
+/// </summary>
+public sealed record CreateMenuItemRequestDto(
     string Name,
-    MenuCategory Category,
+    string Category,
     decimal Price);
 
-public sealed record UpdateAvailabilityRequest(
+/// <summary>
+/// Вхідний DTO для зміни наявності позиції меню (PATCH /api/Menu/{id}/availability).
+/// </summary>
+public sealed record UpdateMenuItemAvailabilityRequestDto(
     bool IsAvailable);
 
-public sealed record UpdatePriceRequest(
+/// <summary>
+/// Вхідний DTO для зміни ціни позиції меню (PATCH /api/Menu/{id}/price).
+/// </summary>
+public sealed record UpdateMenuItemPriceRequestDto(
     decimal Price);
 
-// ── Відповіді ──
+// ── Вихідні DTO (Responses) ──
 
-public sealed record MenuItemResponse(
+/// <summary>
+/// Спеціалізований вихідний DTO для представлення позиції меню (GET /api/Menu, GET /api/Menu/{id}).
+/// </summary>
+public sealed record MenuItemSummaryDto(
     Guid Id,
     string Name,
     string Category,

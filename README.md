@@ -406,6 +406,43 @@ src/
 
 ---
 
+## 🔄 Практична робота №6: Об'єкти передавання даних (DTO) та мапінг між шарами
+
+У межах ПЗ №6 реалізовано строгу ізоляцію рівня представлення (`CoffeeShop.WebApi`) від доменного шару (`CoffeeShop.Domain`), запроваджено спеціалізовані DTO під різні бізнес-сценарії та розширено stateless-мапери у шарі `CoffeeShop.Application`.
+
+### 1. Повна ізоляція WebApi від Domain
+* У контролерах `CoffeeShop.WebApi` (`MenuController`, `OrdersController`, `AnalyticsController`, `DiagnosticsController`) **відсутній будь-який `using CoffeeShop.Domain...`**.
+* Доменні сутності (`MenuItem`, `Order`, `OrderItem`), Value Objects (`Money`, `CustomerName`) та доменні enum (`MenuCategory`, `OrderStatus`) ніколи не виходять за межі шару `Domain` та прикладних сервісів `Application`.
+* Контролери приймають і повертають виключно контракти DTO з шару `Application`.
+
+### 2. Таблиця спеціалізованих DTO (Requests / Responses)
+
+| Контекст | DTO | Напрямок | Ендпоінт / Сценарій | Призначення та ключові поля |
+| :--- | :--- | :--- | :--- | :--- |
+| **Menu** | `MenuItemSummaryDto` | **Вихідний (Response)** | `GET /api/Menu`<br>`GET /api/Menu/{id}` | Відображення позиції меню (`Id`, `Name`, `Category`, `Price`, `IsAvailable`). |
+| **Menu** | `CreateMenuItemRequestDto` | **Вхідний (Request)** | `POST /api/Menu` | Створення нової позиції меню. `Category` передається рядком (`string`), що захищає WebApi від доменного enum `MenuCategory`. |
+| **Menu** | `UpdateMenuItemPriceRequestDto` | **Вхідний (Request)** | `PATCH /api/Menu/{id}/price` | Оновлення вартості позиції (`Price`). |
+| **Menu** | `UpdateMenuItemAvailabilityRequestDto` | **Вхідний (Request)** | `PATCH /api/Menu/{id}/availability` | Оновлення прапорця доступності (`IsAvailable`). |
+| **Orders** | `OrderSummaryDto` | **Вихідний (Response)** | `GET /api/Orders` | Компактне відображення списку замовлень (`Id`, `CustomerName`, `Status`, `ItemsCount`, `TotalAmount`, `CreatedAtUtc`). **Не містить масиву позицій**, що суттєво оптимізує мережевий трафік. |
+| **Orders** | `OrderDetailsDto` | **Вихідний (Response)** | `GET /api/Orders/{id}`<br>`POST /api/Orders`<br>`PATCH /api/Orders/{id}/status` | Повна детальна інформація про замовлення, включаючи масив позицій `Items` (`OrderItemDto`), суму знижки `Discount` та назву застосованої політики `AppliedDiscount`. |
+| **Orders** | `OrderItemDto` | **Вихідний (Response)** | У складі `OrderDetailsDto` | Позиція замовленого товару (`Id`, `MenuItemId`, `ProductName`, `UnitPrice`, `Quantity`, `Subtotal`). |
+| **Orders** | `CreateOrderRequestDto` | **Вхідний (Request)** | `POST /api/Orders` | Створення замовлення гостем (`CustomerName`, список `Items` типу `OrderItemRequestDto`). |
+| **Orders** | `OrderItemRequestDto` | **Вхідний (Request)** | У складі `CreateOrderRequestDto` | Позиція для замовлення (`MenuItemId`, `Quantity`). |
+| **Orders** | `UpdateOrderStatusRequestDto` | **Вхідний (Request)** | `PATCH /api/Orders/{id}/status` | Зміна життєвого циклу замовлення. Підтримує як назву дії (`prepare`, `ready`, `complete`, `cancel`), так і стан (`Status`). |
+| **Orders** | `OrderAnalyticsDto` | **Вихідний (Response)** | `GET /api/Analytics` | Зведена бізнес-статистика (`TotalOrdersCount`, `TotalRevenue`, `LastOrderCreatedAtUtc`, `StatusChangesCount`). |
+
+### 3. Робота маперів (`IMenuMapper`, `IOrderMapper`)
+* **Життєвий цикл Transient:** Мапери зареєстровані у DI як `Transient` (`AddTransient<IMenuMapper, MenuMapper>()`, `AddTransient<IOrderMapper, OrderMapper>()`), оскільки вони є легковаговими чистими stateless-компонентами без стану.
+* **Централізація перетворень:** У сервісах `MenuService`, `OrderQueryService`, `OrderCommandService` немає жодного ручного створення `new ...Dto(...)`. Увесь мапінг інкапсульовано в маперах:
+  * `IMenuMapper.MapToSummary(MenuItem)` та `MapToSummaryList(IEnumerable<MenuItem>)`
+  * `IMenuMapper.MapToCategory(string)` — виконує безпечний парсинг рядкової категорії у доменний enum `MenuCategory` з вичерпним повідомленням про помилку (400 Bad Request при невалідному значенні).
+  * `IOrderMapper.MapToSummary(Order)` та `MapToSummaryList(IEnumerable<Order>)`
+  * `IOrderMapper.MapToDetails(Order)`
+  * `IOrderMapper.MapItemToDto(OrderItem)` та `MapItemsToDtoList(IEnumerable<OrderItem>)`
+* **Zero Dependencies у домені:** `CoffeeShop.Domain` не містить жодних посилань на мапери чи DTO — залежність спрямована суворо з шару `Application` до `Domain`.
+
+---
+
 ## 📝 Технології
 
 - .NET 8 / ASP.NET Core Web API
