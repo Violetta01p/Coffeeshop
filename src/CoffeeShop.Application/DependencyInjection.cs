@@ -4,6 +4,7 @@ using CoffeeShop.Application.Menu.Services;
 using CoffeeShop.Application.Orders.Mappers;
 using CoffeeShop.Application.Orders.Services;
 using CoffeeShop.Domain.Orders.Pricing;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CoffeeShop.Application;
@@ -15,6 +16,9 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        // ── Валідація: Автоматична реєстрація всіх AbstractValidator<T> у збірці Application ──
+        services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
+
         // ── Transient: Легковагові stateless-компоненти без стану ──
         services.AddTransient<IMenuMapper, MenuMapper>();
         services.AddTransient<IOrderMapper, OrderMapper>();

@@ -1,6 +1,7 @@
 using CoffeeShop.Application;
 using CoffeeShop.Infrastructure;
 using CoffeeShop.WebApi.Middleware;
+using FluentValidation.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,8 +9,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
-// ── ASP.NET Core ──
+// ── ASP.NET Core & FluentValidation ──
 builder.Services.AddControllers();
+builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
