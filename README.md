@@ -192,6 +192,7 @@ Content-Type: application/json
 
 ```
 CoffeeShop.sln
+docker-compose.yml                  🐳 Сервіс Memcached 1.6-alpine для розподіленого кешу
 src/
 ├── CoffeeShop.Domain/              🔒 Нуль зовнішніх залежностей
 │   ├── Common/
@@ -221,6 +222,8 @@ src/
 │
 ├── CoffeeShop.Application/         ➡️ залежить від Domain
 │   ├── Common/
+│   │   ├── Caching/
+│   │   │   └── ICacheService.cs    ⚡ Абстракція розподіленого кешу (Cache-Aside)
 │   │   ├── Diagnostics/
 │   │   │   └── ILifetimeServices.cs 🔌 Демонстраційні сервіси Transient/Scoped/Singleton
 │   │   ├── Time/
@@ -261,6 +264,8 @@ src/
 │   └── DependencyInjection.cs      🔌 Composition Root шару Application
 │
 ├── CoffeeShop.Infrastructure/      ➡️ залежить від Application
+│   ├── Caching/
+│   │   └── MemcachedCacheService.cs ⚡ Розподілений кеш на базі Memcached (resilience + graceful fallback)
 │   ├── Events/
 │   │   └── InProcessEventBus.cs    ⚡ In-Process шина на базі IServiceProvider (Scoped)
 │   ├── Persistence/                💾 Патерни Repository та Unit of Work
@@ -516,9 +521,55 @@ src/
 
 ---
 
+## ⚡ Практична робота №9: Кешування в архітектурі програмних систем (Memcached)
+
+У межах ПЗ №9 реалізовано шар розподіленого кешування на базі **Memcached** із застосуванням патерну **Cache-Aside**, відмовостійкістю (resilience) та адресною інвалідацією кешу:
+
+### 1. Архітектурне розмежування (Clean Architecture & DIP)
+- **Інтерфейс-абстракція (`CoffeeShop.Application`):** Створено контракт [`ICacheService`](file:///Users/violetta/Documents/CoffeeShop/src/CoffeeShop.Application/Common/Caching/ICacheService.cs) із методами `GetAsync<T>`, `SetAsync<T>` та `RemoveAsync`. Шар бізнес-логіки не залежить від бібліотеки `EnyimMemcachedCore`.
+- **Реалізація (`CoffeeShop.Infrastructure`):** Клас [`MemcachedCacheService`](file:///Users/violetta/Documents/CoffeeShop/src/CoffeeShop.Infrastructure/Caching/MemcachedCacheService.cs) використовує клієнт `IMemcachedClient`, `System.Text.Json` для крос-платформної серіалізації та структуроване логування (`[CACHE HIT]`, `[CACHE MISS]`, `[CACHE SET]`, `[CACHE INVALIDATE]`).
+- **Domain чистий:** `CoffeeShop.Domain` не містить жодних пакетів чи посилань на кеш.
+
+### 2. Патерн Cache-Aside (Lazy Loading) та життєвий цикл (TTL)
+
+Патерн Cache-Aside реалізовано у прикладних сервісах:
+- **Читання (OrderQueryService, MenuService):**
+  1. Перевірка наявності даних у кеші за відповідним ключем (`GetAsync`).
+  2. При влучанні (**Cache Hit**) — миттєве повернення десеріалізованого DTO клієнту без звернення до репозиторію.
+  3. При промаху (**Cache Miss**) — читання актуальних сутностей зі сховища, мапінг у DTO, збереження в Memcached (`SetAsync`) із часом життя **TTL = 60 секунд** та повернення клієнту.
+- **Модифікація та адресна інвалідація (OrderCommandService, MenuService):**
+  - При оновленні статусу замовлення або модифікації меню після успішного коміту транзакції (`await _unitOfWork.SaveChangesAsync(ct)`) відповідні ключі явно видаляються з кешу через `RemoveAsync`.
+
+### 3. Схема ключів кешування та стратегія інвалідації
+
+| Сервіс | Ключ кешу | Тип даних | TTL | Тригер інвалідації |
+| :--- | :--- | :--- | :--- | :--- |
+| `MenuService` | `menu:all` | `IReadOnlyList<MenuItemSummaryDto>` | 60 с | `CreateAsync`, `UpdatePriceAsync`, `UpdateAvailabilityAsync` |
+| `MenuService` | `menu:item:{id}` | `MenuItemSummaryDto` | 60 с | `CreateAsync`, `UpdatePriceAsync`, `UpdateAvailabilityAsync` |
+| `OrderQueryService` | `order:{id}` | `OrderDetailsDto` | 60 с | `OrderCommandService.ChangeStatusAsync` |
+
+### 4. Відмовостійкість (Resilience & Graceful Fallback)
+- Усі виклики `IMemcachedClient` загорнуті в блок `try-catch`.
+- Якщо сервер Memcached не запущено або виникла мережева помилка, `MemcachedCacheService` фіксує `[CACHE WARNING]` у логах і виконує **graceful fallback** — запит безперебійно продовжує виконуватися через основне сховище даних (`InMemoryDataStore`), не повертаючи помилок користувачеві.
+
+### 5. Компроміси архітектури кешування
+- **Швидкодія vs Узгодженість (Latency vs Consistency):** Cache-Aside з адресною інвалідацією мінімізує мережеве навантаження на сховище та затримку читання, гарантуючи негайну інвалідацію кешу при змінах. TTL 60 секунд виступає запобіжником від розсинхронізації у разі збоїв видалення.
+- **Пам'ять vs Мережа:** Збереження нормалізованих JSON-рядків усуває ризики двійкової несумісності типів та дозволяє легко горизонтально масштабувати пул вузлів Memcached.
+
+### 6. Швидкий запуск Memcached через Docker Compose
+
+Для локального тестування розподіленого кешу в корені проєкту підготовлено `docker-compose.yml`:
+```bash
+docker compose up -d
+```
+
+---
+
 ## 📝 Технології
 
 - .NET 8 / ASP.NET Core Web API
+- EnyimMemcachedCore 3.5.x (Distributed Caching Client)
+- Docker & Docker Compose (Memcached 1.6-alpine)
 - FluentValidation 11.x & FluentValidation.AspNetCore 11.x
 - Swagger / OpenAPI (Swashbuckle)
 - InMemory-сховище (ConcurrentDictionary) — проєкт запускається без налаштування БД

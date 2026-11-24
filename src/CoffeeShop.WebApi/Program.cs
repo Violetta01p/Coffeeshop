@@ -7,7 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // ── Composition Root: Модульна реєстрація залежностей по шарах ──
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure();
+builder.Services.AddInfrastructure(builder.Configuration);
 
 // ── ASP.NET Core & FluentValidation ──
 builder.Services.AddControllers();
