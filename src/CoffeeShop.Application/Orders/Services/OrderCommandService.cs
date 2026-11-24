@@ -1,4 +1,5 @@
 using CoffeeShop.Application.Common;
+using CoffeeShop.Application.Common.Caching;
 using CoffeeShop.Application.Common.Time;
 using CoffeeShop.Application.Events;
 using CoffeeShop.Application.Orders.Dtos;
@@ -17,7 +18,7 @@ namespace CoffeeShop.Application.Orders.Services;
 /// Прикладний сервіс команд (Commands) — відповідає лише за зміну стану замовлень (SRP / ISP).
 /// Усі мутації стану фіксуються в БД атомарно через IUnitOfWork.
 /// Мапінг між сутностями та DTO повністю делеговано IOrderMapper.
-/// Жодного ручного new ...Dto(...) всередині сервісу не виконується.
+/// При зміні стану замовлення виконується інвалідація кешу.
 /// </summary>
 public class OrderCommandService : IOrderCommandService
 {
@@ -28,6 +29,7 @@ public class OrderCommandService : IOrderCommandService
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly IOrderMapper _mapper;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICacheService _cacheService;
 
     public OrderCommandService(
         IOrderRepository orderRepository,
@@ -36,7 +38,8 @@ public class OrderCommandService : IOrderCommandService
         IOrderPricingService pricingService,
         IDateTimeProvider dateTimeProvider,
         IOrderMapper mapper,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        ICacheService cacheService)
     {
         _orderRepository = orderRepository;
         _menuCatalog = menuCatalog;
@@ -45,6 +48,7 @@ public class OrderCommandService : IOrderCommandService
         _dateTimeProvider = dateTimeProvider;
         _mapper = mapper;
         _unitOfWork = unitOfWork;
+        _cacheService = cacheService;
     }
 
     public async Task<OrderDetailsDto> CreateAsync(CreateOrderRequestDto request, CancellationToken ct = default)
@@ -135,6 +139,9 @@ public class OrderCommandService : IOrderCommandService
 
         // Атомарне фіксування змін у сховищі даних
         await _unitOfWork.SaveChangesAsync(ct);
+
+        // Інвалідація кешу замовлення після оновлення статусу
+        await _cacheService.RemoveAsync($"order:{order.Id}", ct);
 
         // Публікація події про зміну життєвого циклу замовлення ЛИШЕ після збереження змін
         await _eventBus.PublishAsync(new OrderStatusChangedEvent(
